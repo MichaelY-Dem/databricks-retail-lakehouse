@@ -2,27 +2,19 @@
 Silver layer - Lakeflow Declarative Pipeline
 Reads Bronze tables as streams, casts types, applies data-quality expectations,
 and keeps the latest version of each record (dedup + late-arriving data handling).
+Cleaning helpers live in src/retail_lakehouse/transforms.py (unit-tested in CI).
 """
+import sys
+
 import dlt
 from pyspark.sql import functions as F
 
+# Make src/ importable (path is set in the pipeline configuration)
+sys.path.append(spark.conf.get("bundle.sourcePath"))
+from retail_lakehouse.transforms import add_event_ts, clean_str, to_num, to_ts
+
 CATALOG = "retail_lakehouse"
 BRONZE = f"{CATALOG}.bronze"
-TS_FMT = "yyyy-MM-dd HH:mm:ss"
-
-
-# ---------- helpers ----------
-def to_ts(col_name):
-    """Text -> timestamp. Returns NULL instead of failing on bad values."""
-    return F.expr(f"try_to_timestamp({col_name}, '{TS_FMT}')")
-
-def to_num(col_name, dtype="double"):
-    """Text -> number. Returns NULL instead of failing on bad values."""
-    return F.expr(f"try_cast({col_name} AS DOUBLE)").cast(dtype)
-
-def clean_str(col_name):
-    return F.trim(F.col(col_name))
-
 
 # =====================================================================
 # ORDERS
@@ -50,13 +42,11 @@ def orders_clean():
         )
     )
     # Latest real event that happened to this order -> used to decide which version wins
-    return df.withColumn(
-        "_event_ts",
-        F.greatest(
-            "order_purchase_timestamp", "order_approved_at",
-            "order_delivered_carrier_date", "order_delivered_customer_date",
-        ),
-    )
+        # Latest real event that happened to this order -> used to decide which version wins
+    return add_event_ts(df, [
+        "order_purchase_timestamp", "order_approved_at",
+        "order_delivered_carrier_date", "order_delivered_customer_date",
+    ])
 
 dlt.create_streaming_table(
     name="orders",
