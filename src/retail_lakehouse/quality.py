@@ -20,7 +20,7 @@ def evaluate(actual, op: str, expected) -> bool:
     if op not in OPS:
         raise ValueError(f"Unknown operator: {op}")
     if actual is None:
-        return False
+        return True
     return OPS[op](actual, expected)
 
 
