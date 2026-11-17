@@ -1,0 +1,1096 @@
+{
+  "datasets": [
+    {
+      "name": "5e1494a8",
+      "displayName": "ds_top_categories",
+      "queryLines": [
+        "SELECT\r\n",
+        "  p.product_category_name     AS category,\r\n",
+        "  ROUND(SUM(f.item_total), 2) AS revenue,\r\n",
+        "  COUNT(DISTINCT f.order_id)  AS orders\r\n",
+        "FROM retail_lakehouse.gold.fact_orders f\r\n",
+        "JOIN retail_lakehouse.gold.dim_product p ON f.product_sk = p.product_sk\r\n",
+        "GROUP BY p.product_category_name\r\n",
+        "ORDER BY revenue DESC\r\n",
+        "LIMIT 10"
+      ]
+    },
+    {
+      "name": "d9aa363c",
+      "displayName": "ds_sales",
+      "queryLines": [
+        "SELECT\r\n",
+        "  d.date                           AS order_date,\r\n",
+        "  d.year,\r\n",
+        "  d.month,\r\n",
+        "  p.product_category_name          AS category,\r\n",
+        "  c.customer_state                 AS state,\r\n",
+        "  f.order_id,\r\n",
+        "  c.customer_unique_id,            -- hashed by the secure view (PII masked)\r\n",
+        "  f.item_total,\r\n",
+        "  f.price,\r\n",
+        "  f.freight_value,\r\n",
+        "  f.delivery_days,\r\n",
+        "  CAST(f.is_late_delivery AS INT)  AS late_flag\r\n",
+        "FROM retail_lakehouse.gold.fact_orders f\r\n",
+        "JOIN retail_lakehouse.gold.dim_date d              ON f.purchase_date_key = d.date_key\r\n",
+        "JOIN retail_lakehouse.gold.dim_product p           ON f.product_sk = p.product_sk\r\n",
+        "JOIN retail_lakehouse.gold.v_dim_customer_secure c ON f.customer_sk = c.customer_sk"
+      ]
+    },
+    {
+      "name": "70f732ba",
+      "displayName": "ds_quality_runs",
+      "queryLines": [
+        "SELECT\r\n",
+        "  job_run_id,\r\n",
+        "  MIN(checked_at)                              AS checked_at,\r\n",
+        "  COUNT(*)                                     AS checks_run,\r\n",
+        "  SUM(CASE WHEN passed THEN 1 ELSE 0 END)      AS checks_passed,\r\n",
+        "  SUM(CASE WHEN passed THEN 0 ELSE 1 END)      AS checks_failed\r\n",
+        "FROM retail_lakehouse.gold.data_quality_results\r\n",
+        "GROUP BY job_run_id"
+      ]
+    },
+    {
+      "name": "eee3383a",
+      "displayName": "ds_latest_checks",
+      "queryLines": [
+        "SELECT check_name, layer, actual_value, rule,\r\n",
+        "       CASE WHEN passed THEN '✅ Pass' ELSE '❌ Fail' END AS result,\r\n",
+        "       checked_at\r\n",
+        "FROM retail_lakehouse.gold.data_quality_results\r\n",
+        "WHERE job_run_id = (\r\n",
+        "  SELECT job_run_id FROM retail_lakehouse.gold.data_quality_results\r\n",
+        "  ORDER BY checked_at DESC LIMIT 1\r\n",
+        ")\r\n",
+        "ORDER BY layer, check_name"
+      ]
+    },
+    {
+      "name": "41eaa77a",
+      "displayName": "ds_table_freshness",
+      "queryLines": [
+        "SELECT 'bronze.orders_raw' AS table_name, COUNT(*) AS row_count, MAX(_ingested_at)            AS last_activity FROM retail_lakehouse.bronze.orders_raw\r\n",
+        "UNION ALL\r\n",
+        "SELECT 'silver.orders',    COUNT(*),                               MAX(_ingested_at)                            FROM retail_lakehouse.silver.orders\r\n",
+        "UNION ALL\r\n",
+        "SELECT 'gold.fact_orders', COUNT(*),                               MAX(order_purchase_timestamp)                FROM retail_lakehouse.gold.fact_orders\r\n",
+        "UNION ALL\r\n",
+        "SELECT 'gold.dim_customer', COUNT(*),                              MAX(effective_from)                          FROM retail_lakehouse.gold.dim_customer"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "254ffed7",
+      "displayName": "Sales Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "total-revenue-brl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "sum(item_total)",
+                      "expression": "SUM(`item_total`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Total Revenue (BRL)",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(item_total)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "orders",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "countdistinct(order_id)",
+                      "expression": "COUNT(DISTINCT `order_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Orders",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(order_id)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "unique-customers",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "countdistinct(customer_unique_id)",
+                      "expression": "COUNT(DISTINCT `customer_unique_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Unique Customers",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(customer_unique_id)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "late-delivery",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "avg(late_flag)",
+                      "expression": "AVG(`late_flag`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Late Delivery %",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(late_flag)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "avg-delivery-days",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "avg(delivery_days)",
+                      "expression": "AVG(`delivery_days`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Avg Delivery Days",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(delivery_days)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "monthly-revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "monthly(order_date)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `order_date`)"
+                    },
+                    {
+                      "name": "sum(item_total)",
+                      "expression": "SUM(`item_total`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "IN_RANGE(`order_date`, NULL, DATE'2023-05-02T23:59:59.999')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Monthly Revenue",
+                  "fields": []
+                }
+              },
+              "version": 1,
+              "widgetType": "forecast-line",
+              "encodings": {
+                "x": {
+                  "fieldName": "monthly(order_date)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "original": {
+                    "fieldName": "sum(item_total)"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "revenue-by-state",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "sum(item_total)",
+                      "expression": "SUM(`item_total`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Revenue by State",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "state",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(item_total)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "top-10-categories",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "5e1494a8",
+                  "fields": [
+                    {
+                      "name": "revenue",
+                      "expression": "`revenue`"
+                    },
+                    {
+                      "name": "category",
+                      "expression": "`category`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Top 10 Categories",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "category",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                },
+                "label": {
+                  "show": false
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "delivery-performance-by-state",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "countdistinct(order_id)",
+                      "expression": "COUNT(DISTINCT `order_id`)"
+                    },
+                    {
+                      "name": "avg(delivery_days)",
+                      "expression": "AVG(`delivery_days`)"
+                    },
+                    {
+                      "name": "avg(late_flag)",
+                      "expression": "AVG(`late_flag`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`state`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Delivery Performance by State",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "state"
+                  },
+                  {
+                    "fieldName": "countdistinct(order_id)",
+                    "contentAlignment": "left"
+                  },
+                  {
+                    "fieldName": "avg(delivery_days)",
+                    "contentAlignment": "left"
+                  },
+                  {
+                    "fieldName": "avg(late_flag)",
+                    "format": {
+                      "type": "number-percent",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      },
+                      "hideGroupSeparator": true
+                    },
+                    "contentAlignment": "left"
+                  }
+                ],
+                "rowOrder": [
+                  {
+                    "by": "column-reversed",
+                    "field": {
+                      "index": 0
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "order-date",
+            "queries": [
+              {
+                "name": "dashboards/01f1e28fefb51065a1d5899e51dddca5/datasets/01f1e29006931d01b7d9010f0e449804_order_date",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "order_date",
+                      "expression": "`order_date`"
+                    },
+                    {
+                      "name": "order_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "selection": {
+                "defaultSelection": {
+                  "range": {
+                    "dataType": "DATE",
+                    "min": {
+                      "value": "2017-01-01T00:00:00.000"
+                    },
+                    "max": {
+                      "value": "2018-08-31T23:59:59.999"
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Order Date",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "order_date",
+                    "queryName": "dashboards/01f1e28fefb51065a1d5899e51dddca5/datasets/01f1e29006931d01b7d9010f0e449804_order_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "category",
+            "queries": [
+              {
+                "name": "dashboards/01f1e28fefb51065a1d5899e51dddca5/datasets/01f1e2901ef8146d884689c41ef9fa12_category",
+                "query": {
+                  "datasetName": "5e1494a8",
+                  "fields": [
+                    {
+                      "name": "category",
+                      "expression": "`category`"
+                    },
+                    {
+                      "name": "category_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Category",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "category",
+                    "queryName": "dashboards/01f1e28fefb51065a1d5899e51dddca5/datasets/01f1e2901ef8146d884689c41ef9fa12_category"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 14,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "state1",
+            "queries": [
+              {
+                "name": "dashboards/01f1e28fefb51065a1d5899e51dddca5/datasets/01f1e29006931d01b7d9010f0e449804_state",
+                "query": {
+                  "datasetName": "d9aa363c",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "state_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "State",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "queryName": "dashboards/01f1e28fefb51065a1d5899e51dddca5/datasets/01f1e29006931d01b7d9010f0e449804_state"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 14,
+            "width": 5,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "7156b22b",
+      "displayName": "Pipeline Health",
+      "layout": [
+        {
+          "widget": {
+            "name": "checks-latest-run",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "eee3383a",
+                  "fields": [
+                    {
+                      "name": "count(check_name)",
+                      "expression": "COUNT(`check_name`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Checks in Latest Run",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(check_name)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "checks-latest-run-1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "70f732ba",
+                  "fields": [
+                    {
+                      "name": "sum(checks_failed)",
+                      "expression": "SUM(`checks_failed`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Failed Checks (all runs)",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(checks_failed)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "quality-gate-history",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "70f732ba",
+                  "fields": [
+                    {
+                      "name": "job_run_id",
+                      "expression": "`job_run_id`"
+                    },
+                    {
+                      "name": "sum(checks_passed)",
+                      "expression": "SUM(`checks_passed`)"
+                    },
+                    {
+                      "name": "sum(checks_failed)",
+                      "expression": "SUM(`checks_failed`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Quality Gate Results per Job Run",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "job_run_id",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "sum(checks_passed)"
+                    },
+                    {
+                      "fieldName": "sum(checks_failed)"
+                    }
+                  ]
+                },
+                "label": {
+                  "show": false
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "f4a80563",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "eee3383a",
+                  "fields": [
+                    {
+                      "name": "check_name",
+                      "expression": "`check_name`"
+                    },
+                    {
+                      "name": "layer",
+                      "expression": "`layer`"
+                    },
+                    {
+                      "name": "rule",
+                      "expression": "`rule`"
+                    },
+                    {
+                      "name": "result",
+                      "expression": "`result`"
+                    },
+                    {
+                      "name": "checked_at",
+                      "expression": "`checked_at`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "check_name"
+                  },
+                  {
+                    "fieldName": "layer"
+                  },
+                  {
+                    "fieldName": "rule"
+                  },
+                  {
+                    "fieldName": "result"
+                  },
+                  {
+                    "fieldName": "checked_at"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 8,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "ab8ceb0b",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "41eaa77a",
+                  "fields": [
+                    {
+                      "name": "table_name",
+                      "expression": "`table_name`"
+                    },
+                    {
+                      "name": "row_count",
+                      "expression": "`row_count`"
+                    },
+                    {
+                      "name": "last_activity",
+                      "expression": "`last_activity`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "table_name"
+                  },
+                  {
+                    "fieldName": "row_count"
+                  },
+                  {
+                    "fieldName": "last_activity"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 7,
+            "width": 8,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
