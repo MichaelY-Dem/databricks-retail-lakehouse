@@ -1,0 +1,33 @@
+name: Bind existing Databricks resources (one-time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Existing job ID (retail_lakehouse_daily)"
+        required: true
+      pipeline_id:
+        description: "Existing pipeline ID (retail_silver_pipeline)"
+        required: true
+
+jobs:
+  bind:
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      BUNDLE_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate bundle
+        run: databricks bundle validate -t prod
+
+      - name: Bind existing job
+        run: databricks bundle deployment bind retail_lakehouse_daily ${{ inputs.job_id }} -t prod --auto-approve
+
+      - name: Bind existing pipeline
+        run: databricks bundle deployment bind retail_silver_pipeline ${{ inputs.pipeline_id }} -t prod --auto-approve
