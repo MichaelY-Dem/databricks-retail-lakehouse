@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -31,3 +31,28 @@ jobs:
 
       - name: Run unit tests
         run: pytest -v
+
+  deploy:
+    name: Deploy bundle to Databricks (prod)
+    needs: unit-tests                      # only runs if ALL tests pass
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      BUNDLE_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate bundle
+        run: databricks bundle validate -t prod
+
+      - name: Deploy bundle
+        run: databricks bundle deploy -t prod
+
+      - name: Show deployed resources
+        run: databricks bundle summary -t prod
