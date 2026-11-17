@@ -1,0 +1,16 @@
+resources:
+  pipelines:
+    retail_silver_pipeline:
+      name: retail_silver_pipeline
+      catalog: ${var.catalog}
+      schema: silver
+      serverless: true
+      continuous: false
+      development: false
+      channel: CURRENT
+      libraries:
+        - file:
+            path: ../pipelines/silver_pipeline.py
+      configuration:
+        # Lets silver_pipeline.py import src/retail_lakehouse from the DEPLOYED copy of the repo
+        bundle.sourcePath: ${workspace.file_path}/src
