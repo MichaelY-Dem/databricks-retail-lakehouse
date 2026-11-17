@@ -2,6 +2,7 @@ resources:
   jobs:
     retail_lakehouse_daily:
       name: retail_lakehouse_daily
+      description: "Daily Bronze -> Silver -> Gold lakehouse run. Deployed automatically by GitHub Actions via Databricks Asset Bundles."
       max_concurrent_runs: 1
 
       tags:
